@@ -1,8 +1,10 @@
+import { Input } from "./ui/input"
+
 
 const Search = () => {
   return (
     <div>
-        <input placeholder="type here..."/>
+        <Input type="text" placeholder="search..."/>
     </div>
   )
 }
