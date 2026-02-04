@@ -1,3 +1,4 @@
+
 'use client'
 
 import { Input } from "@/components/ui/input"
@@ -11,6 +12,7 @@ import { useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { ChevronLeft, ChevronRight, X } from "lucide-react"
 import Stepper from "@/components/Stepper"
+import FetchQuery from "@/TanStackQuery/queries/FetchQuery"
 
 interface formProps {
     email:string
@@ -53,6 +55,20 @@ const MultiStepForm = () => {
     })
    
 
+    // Helper function to validate entire step
+    const validateStep = async () => {
+    if (step === 0) {
+        const emailErrors = await form.validateField('email', 'change')
+        console.log(emailErrors)
+        const passwordErrors = await form.validateField('password', 'change')
+
+        if (emailErrors.length === 0 && passwordErrors.length === 0) {
+        setStep((prev) => prev + 1)
+        }
+    }
+    }
+
+
   return (
   <>
     <Stepper currentStep={step} steps={steps}/>
@@ -74,12 +90,18 @@ const MultiStepForm = () => {
                       : !emailRegex.test(value) 
                       ? 'Invalid email'
                       : undefined,
-                      onSubmit:({value})=>
-                        !value 
-                      ? 'Field is required'
-                      : !emailRegex.test(value) 
-                      ? 'Invalid email'
-                      : undefined,
+                     onSubmit: async ({ value }) => {
+                        if (!value) return 'Field is required'
+                        if (!emailRegex.test(value)) return 'Invalid email'
+
+                        const userExists = await FetchQuery(value)
+                        if (userExists) return 'User already exists'
+                        },              
+                      onBlur: async ({value})=> 
+                        !value? 'Field is required'
+                        : !emailRegex.test(value)
+                        ? 'Invalid email' 
+                        : undefined
                     }} 
                     children={(field)=>(
                       <>
@@ -156,7 +178,7 @@ const MultiStepForm = () => {
                         return (
                                 <>
                                 <h3>Photos</h3>
-                                <Button className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700" 
+                                <Button type="button" className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700" 
                                 onClick={()=>inputRef.current?.click()}>
                                     Upload
                                 </Button>
@@ -191,7 +213,11 @@ const MultiStepForm = () => {
           <div className="flex justify-between mt-6">
             <div className="flex gap-2">
                 <Button variant='outline' disabled={step===0} onClick={()=>setStep(prev=>prev -1)}><ChevronLeft /></Button>
-                <Button variant='outline' disabled={step===2} onClick={()=>setStep(prev=>prev+1)}><ChevronRight /></Button>
+                <Button variant='outline' disabled={step===2} onClick={()=>{ 
+                    validateStep()
+                    }}>
+                        <ChevronRight />
+                </Button>
               </div>
               {step === 2 && <Button variant="default">Submit</Button>}
           </div>
