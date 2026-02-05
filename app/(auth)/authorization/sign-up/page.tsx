@@ -12,61 +12,85 @@ import { useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { ChevronLeft, ChevronRight, X } from "lucide-react"
 import Stepper from "@/components/Stepper"
-import FetchQuery from "@/TanStackQuery/queries/FetchQuery"
+import  { useFetchEmailExists } from "@/TanStackQuery/queries/FetchQuery"
+import * as z from "zod"; 
+import AvatarPreview from "@/components/helper components/AvatarPreview"
 
-interface formProps {
-    email:string
-    password: string
-    fullname: string
-    avatar:File | null
-    gender: Gender
-    age:string
-    country: string
-    city:string
-    interests: Interests[]
-    imgs: File []
-}
+
 
 const steps = ['Account data', 'Peronal info', 'Additional info']
 
-
-
+const formSchema = z.object({
+    email: z.email('Invalid email'),
+    password: z.string().min(8, 'Password should be at leats 8 characteres long'),
+    fullname: z.string().toLowerCase(),
+    avatar: z.instanceof(File),
+    gender: z.string(),
+    age: z.coerce.number().int("Age must be a whole number").min(18, 'You should be more than 18').max(80),
+    country: z.string().toLowerCase().optional(),
+    city: z.string().toLowerCase().optional(),
+    interests: z.array(z.string().toLowerCase()).min(1, 'Select at least 1 interest'),
+    imgs: z.array(z.instanceof(File))
+})
+ type formValues = z.infer<typeof formSchema>
 
 const MultiStepForm = () => {
     const inputRef = useRef<HTMLInputElement>(null);
     const [step, setStep]= useState(0)
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    const form = useForm({
+    const fetchEmail = useFetchEmailExists() //fetchEmail is renamed fetchEmailExists
+
+    const form = useForm<formValues>({
         defaultValues:{
             email:'',
             password:'',
             fullname:'',
             avatar: null,
             gender: Gender.Male as Gender,
-            age:'',
+            age: null,
             country:'',
             city:'',
-            interests:[] as Interests[],
-            imgs:[] as File[]
-        } satisfies formProps,
+            interests:[],
+            imgs:[] 
+        },
         onSubmit:({value})=>{
             console.log(value)
         }
     })
    
 
-    // Helper function to validate entire step
-    const validateStep = async () => {
-    if (step === 0) {
-        const emailErrors = await form.validateField('email', 'change')
-        console.log(emailErrors)
-        const passwordErrors = await form.validateField('password', 'change')
+    const stepFields: Record<number, (keyof formValues)[]> = {
+        0: ['email', 'password'],
+        1: ['fullname', 'avatar', 'gender', 'age', 'country', 'city'],
+        2: ['interests', 'imgs'],
+    };
 
-        if (emailErrors.length === 0 && passwordErrors.length === 0) {
-        setStep((prev) => prev + 1)
-        }
+    const validateCurrentStep = async() => {
+        const fields = stepFields[step]
+        const result = await Promise.all(fields.map((field) => form.validateField(field, 'change')))
     }
+
+
+    //Helper function to validate each field separately
+    const validateField = <T extends keyof typeof formSchema.shape>(fieldName: T) => 
+  async ({ value }: { value: any }) => {
+    
+    // 1. Validate the raw value with Zod
+    const result = formSchema.shape[fieldName].safeParse(value);
+    
+    if (!result.success) {
+        return result.error.issues[0].message;
     }
+
+    // 2. Handle Async Email Check
+    if (fieldName === 'email' && value) {
+        const userExists = await fetchEmail(value);
+        if (userExists) return "User already exists";
+    }
+
+    // Return undefined for success
+    return undefined;
+};
+
 
 
   return (
@@ -83,26 +107,14 @@ const MultiStepForm = () => {
             {step===0 && (
                 <div className="space-y-4">
                     <h2>Account data</h2>
-                    <form.Field name="email" validators={{
-                    onChange:({value})=>
-                      !value 
-                      ? 'Field is required'
-                      : !emailRegex.test(value) 
-                      ? 'Invalid email'
-                      : undefined,
-                     onSubmit: async ({ value }) => {
-                        if (!value) return 'Field is required'
-                        if (!emailRegex.test(value)) return 'Invalid email'
-
-                        const userExists = await FetchQuery(value)
-                        if (userExists) return 'User already exists'
-                        },              
-                      onBlur: async ({value})=> 
-                        !value? 'Field is required'
-                        : !emailRegex.test(value)
-                        ? 'Invalid email' 
-                        : undefined
-                    }} 
+                    <form.Field name="email" 
+                    validators={{
+                        onChange:({value})=>{
+                            const result = formSchema.shape.email.safeParse(value)
+                            return result.success ? undefined : result.error.issues[0].message;
+                        },
+                        onBlur: validateField('email'),
+                    }}
                     children={(field)=>(
                       <>
                         <Input placeholder="Email" value={field.state.value} onBlur={field.handleBlur} onChange={(e)=>field.handleChange(e.target.value)}/>
@@ -110,9 +122,19 @@ const MultiStepForm = () => {
                       </>
                     )}/>
                     
-                    <form.Field name="password" children={(field)=>(
-                        <Input placeholder="Password" value={field.state.value} onChange={(e)=>field.handleChange(e.target.value)}/>
+                    <form.Field name="password" 
+                    validators={{
+                        onChange: validateField('password'),
+                        onBlur:validateField('password')
+                    }}
+                    children={(field)=>(
+                        <>
+                            <Input placeholder="Password" value={field.state.value} onChange={(e)=>field.handleChange(e.target.value)}/>
+                            {field.state.meta.errors.length > 0 && (<p className="text-sm text-red-500">{field.state.meta.errors[0]}</p>)}
+                        </>
+                        
                     )}/>
+                    
                 </div>
                 )}
             
@@ -120,9 +142,30 @@ const MultiStepForm = () => {
             {step===1 && (
                 <div className="space-y-4">
                      <h2>Personal Info</h2>
+                     <div className="flex">
                      <form.Field name="fullname" children={(field)=>(
                         <Input placeholder="Full name" value={field.state.value} onChange={(e)=> field.handleChange(e.target.value)} />
                      )}/>
+                     <form.Field name="avatar" children={(field)=>{
+                        const file = field.state.value
+                        return(
+                            <>
+                                <p>Profile picture</p>
+                                <Button type="button" onClick={()=> inputRef.current?.click()}>Upload</Button>
+                                <Input type="file" ref={inputRef} accept="image/png, image/jpeg" className="hidden"
+                                onChange={(e)=>{
+                                    const selectedFile = e.target.files?.[0]
+                                    if(selectedFile) {
+                                        field.handleChange(selectedFile)
+                                    }
+                                }}
+                                />
+                                {file && <AvatarPreview file={file}/>}
+                            </>
+                        )
+                     }}
+                     />
+                     </div>
                      <form.Field name="gender" children={(field)=>(
                         <RadioGroup value={field.state.value} onValueChange={(val)=>field.handleChange(val as Gender)} className="flex">
                             <div className="flex gap-1">
@@ -135,8 +178,8 @@ const MultiStepForm = () => {
                             </div>
                         </RadioGroup>
                      )}/>
-                     <form.Field name="age" children={(field)=>(
-                        <Input placeholder="Age" value={field.state.value} onChange={(e)=>field.handleChange(e.target.value)}/>
+                     <form.Field name="age"  children={(field)=>(
+                        <Input placeholder="Age"  value={field.state.value} onChange={(e)=>field.handleChange(Number(e.target.value))}/>
                      )}/>
                        <form.Field name="country" children={(field)=>(
                         <Input placeholder="Country" value={field.state.value} onChange={(e)=>field.handleChange(e.target.value)}/>
@@ -214,7 +257,7 @@ const MultiStepForm = () => {
             <div className="flex gap-2">
                 <Button variant='outline' disabled={step===0} onClick={()=>setStep(prev=>prev -1)}><ChevronLeft /></Button>
                 <Button variant='outline' disabled={step===2} onClick={()=>{ 
-                    validateStep()
+                 setStep( prev=>prev+1)
                     }}>
                         <ChevronRight />
                 </Button>

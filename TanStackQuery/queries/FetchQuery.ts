@@ -1,24 +1,25 @@
 'use client'
 
-import { useQueryClient } from '@tanstack/react-query'
-import CheckEmailExists from './CheckEmailExists'
 
+import { useQueryClient } from '@tanstack/react-query';
+import CheckEmailExists from './CheckEmailExists';
 
+export const useFetchEmailExists = () => {
+  const queryClient = useQueryClient();
 
+  const fetchEmailExists = async (value: string) => {
+    try {
+      const userExists = await queryClient.fetchQuery({
+        queryKey: ["check-email", value],
+        queryFn: () => CheckEmailExists(value),
+        staleTime: 1000 * 60 * 5,
+      });
+      return userExists;
+    } catch (err) {
+      console.error(err);
+      return false;
+    }
+  };
 
-const FetchQuery = async (value: string) => {
-const query_client = useQueryClient()
-  try {
-    const userExists = await query_client.fetchQuery({
-      queryKey: ["check-email", value],
-      queryFn: () => CheckEmailExists(value),
-      staleTime: 1000 * 60 * 5,
-    });
-    return userExists;
-  } catch (err) {
-    console.error(err);
-    return false; // assume "doesn't exist" on network error
-  }
+  return fetchEmailExists;
 };
-
-export default FetchQuery;
