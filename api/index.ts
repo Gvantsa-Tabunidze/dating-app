@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabaseClient"
+import { supabase } from "@/api/supabaseClient"
 
 const CheckEmailExists = async (email:string) => {
   const {data, error} = await supabase
@@ -15,3 +15,8 @@ const CheckEmailExists = async (email:string) => {
 }
 
 export default CheckEmailExists
+
+
+
+
+

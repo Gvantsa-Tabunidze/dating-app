@@ -15,6 +15,7 @@ import Stepper from "@/components/Stepper"
 import  { useFetchEmailExists } from "@/TanStackQuery/queries/FetchQuery"
 import * as z from "zod"; 
 import AvatarPreview from "@/components/helper components/AvatarPreview"
+import useAuthStore from "@/store/auth/useAuthStore"
 
 
 
@@ -34,10 +35,12 @@ const formSchema = z.object({
 })
  type formValues = z.infer<typeof formSchema>
 
+
 const MultiStepForm = () => {
     const inputRef = useRef<HTMLInputElement>(null);
     const [step, setStep]= useState(0)
     const fetchEmail = useFetchEmailExists() //fetchEmail is renamed fetchEmailExists
+    const registerUser = useAuthStore((state)=> state.signUp)
 
     const form = useForm<formValues>({
         defaultValues:{
@@ -66,30 +69,36 @@ const MultiStepForm = () => {
 
     const validateCurrentStep = async() => {
         const fields = stepFields[step]
-        const result = await Promise.all(fields.map((field) => form.validateField(field, 'change')))
+        try {
+            const validationResults = await Promise.all(fields.map((field) => form.validateField(field, 'change')))
+            // console.log(validationResults)
+            return validationResults.every(r=> !r)
+        } catch (error) {
+            console.log(error)
+        }
     }
 
 
     //Helper function to validate each field separately
     const validateField = <T extends keyof typeof formSchema.shape>(fieldName: T) => 
-  async ({ value }: { value: any }) => {
-    
-    // 1. Validate the raw value with Zod
-    const result = formSchema.shape[fieldName].safeParse(value);
-    
-    if (!result.success) {
-        return result.error.issues[0].message;
-    }
+        async ({ value }: { value: any }) => {
+            
+            // 1. Validate the raw value with Zod
+            const result = formSchema.shape[fieldName].safeParse(value);
+            
+            if (!result.success) {
+                return result.error.issues[0].message;
+            }
 
-    // 2. Handle Async Email Check
-    if (fieldName === 'email' && value) {
-        const userExists = await fetchEmail(value);
-        if (userExists) return "User already exists";
-    }
+            // 2. Handle Async Email Check
+            if (fieldName === 'email' && value) {
+                const userExists = await fetchEmail(value);
+                if (userExists) return "User already exists";
+            }
 
-    // Return undefined for success
-    return undefined;
-};
+            // Return undefined for success
+            return undefined;
+        };
 
 
 
@@ -256,7 +265,16 @@ const MultiStepForm = () => {
           <div className="flex justify-between mt-6">
             <div className="flex gap-2">
                 <Button variant='outline' disabled={step===0} onClick={()=>setStep(prev=>prev -1)}><ChevronLeft /></Button>
-                <Button variant='outline' disabled={step===2} onClick={()=>{ 
+                <Button variant='outline' disabled={step===2} onClick={ async ()=>{ 
+                    const  valid = await validateCurrentStep()
+                    if(!valid) return
+
+                    const {email,password} = form.state.values
+                    const {error} = await registerUser(email, password)
+                    if(error) {
+                        alert(error.message)
+                        return
+                    }
                  setStep( prev=>prev+1)
                     }}>
                         <ChevronRight />

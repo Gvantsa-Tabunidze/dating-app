@@ -1,8 +1,9 @@
 'use client'
 
 
+import CheckEmailExists from '@/api';
 import { useQueryClient } from '@tanstack/react-query';
-import CheckEmailExists from './CheckEmailExists';
+
 
 export const useFetchEmailExists = () => {
   const queryClient = useQueryClient();
