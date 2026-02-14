@@ -10,7 +10,7 @@ import { Gender, Interests } from "@/interfaces/enums"
 import { Checkbox } from "@/components/ui/checkbox"
 import { useRef } from "react"
 import { Button } from "@/components/ui/button"
-import { ChevronLeft, ChevronRight, X } from "lucide-react"
+import { ChevronLeft, ChevronRight, LoaderCircle, X } from "lucide-react"
 import Stepper from "@/components/Stepper"
 import  { useFetchEmailExists } from "@/TanStackQuery/queries/FetchQuery"
 import * as z from "zod"; 
@@ -22,12 +22,12 @@ import useAuthStore from "@/store/auth/useAuthStore"
 const steps = ['Account data', 'Peronal info', 'Additional info']
 
 const formSchema = z.object({
-    email: z.email('Invalid email'),
+    email: z.string().email('Invalid email'),
     password: z.string().min(8, 'Password should be at leats 8 characteres long'),
     fullname: z.string().toLowerCase(),
-    avatar: z.instanceof(File),
+    avatar: z.instanceof(File).optional(),
     gender: z.string(),
-    age: z.coerce.number().int("Age must be a whole number").min(18, 'You should be more than 18').max(80),
+    age: z.coerce.number().int("Age must be a whole number").min(18, 'You should be more than 18').max(80).optional(),
     country: z.string().toLowerCase().optional(),
     city: z.string().toLowerCase().optional(),
     interests: z.array(z.string().toLowerCase()).min(1, 'Select at least 1 interest'),
@@ -37,10 +37,13 @@ const formSchema = z.object({
 
 
 const MultiStepForm = () => {
-    const inputRef = useRef<HTMLInputElement>(null);
+    const avatarinputRef = useRef<HTMLInputElement>(null);
+    const ImgsinputRef = useRef<HTMLInputElement>(null);
     const [step, setStep]= useState(0)
     const fetchEmail = useFetchEmailExists() //fetchEmail is renamed fetchEmailExists
     const registerUser = useAuthStore((state)=> state.signUp)
+    const user = useAuthStore((state)=> state.user)
+    const loading = useAuthStore((state)=> state.loading)
 
     const form = useForm<formValues>({
         defaultValues:{
@@ -59,6 +62,7 @@ const MultiStepForm = () => {
             console.log(value)
         }
     })
+    
    
 
     const stepFields: Record<number, (keyof formValues)[]> = {
@@ -67,20 +71,28 @@ const MultiStepForm = () => {
         2: ['interests', 'imgs'],
     };
 
-    const validateCurrentStep = async() => {
-        const fields = stepFields[step]
-        try {
-            const validationResults = await Promise.all(fields.map((field) => form.validateField(field, 'change')))
-            // console.log(validationResults)
-            return validationResults.every(r=> !r)
-        } catch (error) {
-            console.log(error)
-        }
+
+    const validateCurrentStep = () => {
+         const fields = stepFields[step]
+    
+        return fields.map(field => {
+            const value = form.state.values[field]
+            const schema = formSchema.shape[field]
+            
+            // Zod synchronous validation
+            const result = schema.safeParse(value)
+            if (!result.success) {
+            return result.error.issues.map(issue => issue.message)
+            }
+
+            return []  // no errors
+    })
     }
 
 
+
     //Helper function to validate each field separately
-    const validateField = <T extends keyof typeof formSchema.shape>(fieldName: T) => 
+    const validateField = <T extends keyof formValues>(fieldName: T, userExists?:boolean) => 
         async ({ value }: { value: any }) => {
             
             // 1. Validate the raw value with Zod
@@ -91,14 +103,17 @@ const MultiStepForm = () => {
             }
 
             // 2. Handle Async Email Check
-            if (fieldName === 'email' && value) {
+            if (fieldName === 'email' && value && userExists)   {
                 const userExists = await fetchEmail(value);
-                if (userExists) return "User already exists";
+                if (userExists) return 'User already exists'
             }
 
             // Return undefined for success
             return undefined;
         };
+
+
+ 
 
 
 
@@ -118,11 +133,8 @@ const MultiStepForm = () => {
                     <h2>Account data</h2>
                     <form.Field name="email" 
                     validators={{
-                        onChange:({value})=>{
-                            const result = formSchema.shape.email.safeParse(value)
-                            return result.success ? undefined : result.error.issues[0].message;
-                        },
-                        onBlur: validateField('email'),
+                        onChange: validateField('email'),
+                        onBlurAsync: validateField('email', true),
                     }}
                     children={(field)=>(
                       <>
@@ -160,8 +172,8 @@ const MultiStepForm = () => {
                         return(
                             <>
                                 <p>Profile picture</p>
-                                <Button type="button" onClick={()=> inputRef.current?.click()}>Upload</Button>
-                                <Input type="file" ref={inputRef} accept="image/png, image/jpeg" className="hidden"
+                                <Button type="button" onClick={()=> avatarinputRef.current?.click()}>Upload</Button>
+                                <Input type="file" ref={avatarinputRef} accept="image/png, image/jpeg" className="hidden"
                                 onChange={(e)=>{
                                     const selectedFile = e.target.files?.[0]
                                     if(selectedFile) {
@@ -231,11 +243,11 @@ const MultiStepForm = () => {
                                 <>
                                 <h3>Photos</h3>
                                 <Button type="button" className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700" 
-                                onClick={()=>inputRef.current?.click()}>
+                                onClick={()=>ImgsinputRef.current?.click()}>
                                     Upload
                                 </Button>
                                     <Input type="file" accept="image/jpeg, image/png"
-                                     multiple ref={inputRef} className="hidden" 
+                                     multiple ref={ImgsinputRef} className="hidden" 
                                      onChange={(e)=>{
                                         const files = Array.from(e.target.files ?? [])
                                         field.handleChange([...field.state.value, ...files].slice(0,6))
@@ -264,25 +276,31 @@ const MultiStepForm = () => {
 
           <div className="flex justify-between mt-6">
             <div className="flex gap-2">
-                <Button variant='outline' disabled={step===0} onClick={()=>setStep(prev=>prev -1)}><ChevronLeft /></Button>
-                <Button variant='outline' disabled={step===2} onClick={ async ()=>{ 
-                    const  valid = await validateCurrentStep()
-                    if(!valid) return
+                <Button variant='outline' disabled={step===0 || (step === 1 && !!user?.id)} onClick={()=>setStep(prev=>prev -1)}><ChevronLeft /></Button>
+                <Button variant='outline' disabled={step===2 || (step === 0 && !user)}
+                onClick={ async ()=>{ 
+                    const  isValid =  validateCurrentStep()?.every(arrOfErrors=>arrOfErrors.length === 0)
+                    console.log('Step 0 valid?', isValid)
 
-                    const {email,password} = form.state.values
-                    const {error} = await registerUser(email, password)
-                    if(error) {
-                        alert(error.message)
-                        return
+                    if(!isValid) return
+                    
+                    if(step === 0 && !user?.id){
+                        console.log('Heyyyy')
+                        const {email,password} = form.state.values
+                        const {error} = await registerUser(email, password)
+                        if(error) {
+                            alert(error.message) 
+                            return
+                        }
+                        alert('User\'s been registered successfully')
                     }
-                 setStep( prev=>prev+1)
+                    setStep( prev=>prev+1)
                     }}>
-                        <ChevronRight />
+                       {loading ? <LoaderCircle className="animate-spin h-5 w-5 text-grey-400" /> : <ChevronRight />}
                 </Button>
               </div>
               {step === 2 && <Button variant="default">Submit</Button>}
           </div>
-
         </form>
     </>
   </>

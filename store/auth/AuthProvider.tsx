@@ -1,3 +1,4 @@
+'use client'
 import { useEffect } from "react"
 import useAuthStore from "./useAuthStore"
 import { supabase } from "@/api/supabaseClient"
@@ -16,6 +17,7 @@ const AuthProvider = ({children}:IAuthProviderProps) => {
     useEffect(()=>{
         //get session
         supabase.auth.getSession().then(({data})=>{
+            
             setUser(data.session?.user ?? null)
             setLoading(false)
         })

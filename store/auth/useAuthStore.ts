@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { authState } from './interface'
 import { supabase } from "@/api/supabaseClient"
-import { AuthError } from '@supabase/supabase-js'
+
 
 const initialState = {
     user: null,
@@ -11,23 +11,32 @@ const initialState = {
  const useAuthStore = create<authState>()((set) => ({
   ...initialState,
   signUp: async (email, password)=> {
+    set({loading:true})
     const {error, data} = await supabase.auth.signUp({
       email,
       password
     })
-    return error ? {success: false, error, data:undefined} :  {success: true, error: null, data}   
+    if (!error && data?.user) {
+    set({ user: data.user, loading: false }) 
+    return {success: true, error: null, data}   
+    }
+    return {success: false, error: error, data:undefined} 
   },
   signIn: async (email, password)=> {
     const {error, data} = await supabase.auth.signInWithPassword({
       email,
       password
     })
-    return error ? {success: false, data:undefined, error} : {success: true,  data, error: null};      
+    if (!error && data?.user) {
+    set({ user: data.user, loading: false }) 
+    return {success: true, error: null, data}   
+  }
+  return {success: false, error: error, data:undefined} 
   },
   signOut: async()=>{
     const {error} = await supabase.auth.signOut()
     if(error) throw error
-  },
+  }, 
   setUser:(user)=> set({
     user
   }),
